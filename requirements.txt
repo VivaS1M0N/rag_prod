@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+streamlit
+python-dotenv
+openai
+qdrant-client
+python-multipart
+llama-index
+boto3
+requests
+
+pypdf
+pymupdf
