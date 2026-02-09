@@ -317,7 +317,7 @@ with st.sidebar:
         # Logout URL: if nginx has /logout mapped, use that; else oauth2-proxy sign_out
     logout_url = "/logout"  # nginx should route /logout to /oauth2/sign_out
 
-    role_label = "🛡️ Admin" if is_admin_user else "👥 Equipo"
+    role_label = "🛡️ Admin" if is_admin else "👥 Equipo"
 
     st.markdown(
         f"""
