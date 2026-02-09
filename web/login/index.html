@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Viva AI Assistant — Login</title>
+  <link rel="stylesheet" href="/static/login/style.css"/>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="row">
+        <img src="/static/assets/logo.svg" alt="Viva AI" width="170" height="46" />
+      </div>
+      <h1>Viva AI Assistant</h1>
+      <p>Inicia sesión con tu correo <span class="code">@vivalandscapedesign.com</span> para acceder al chat, PDFs y ClickUp.</p>
+
+      <a id="loginBtn" class="btn btn-primary" href="#">
+        <span>Continuar con Google</span>
+      </a>
+
+      <p class="small">
+        Si estás dentro de ClickUp (embed) y no te deja entrar, abre el asistente en una pestaña nueva.
+      </p>
+    </div>
+  </div>
+
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const rd = params.get("rd") || "/";
+  const loginUrl = "/oauth2/start?rd=" + encodeURIComponent(rd);
+  document.getElementById("loginBtn").setAttribute("href", loginUrl);
+})();
+</script>
+</body>
+</html>

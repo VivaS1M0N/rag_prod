@@ -1,0 +1,106 @@
+# /etc/nginx/conf.d/aichatbot.conf
+# Ajusta server_name y rutas según tu instancia.
+
+server {
+    listen 80;
+    server_name _;
+
+    # -------------------------
+    # Static (login + embed)
+    # -------------------------
+    # Copia la carpeta "web/" del repo a /var/www/viva/
+    #   /var/www/viva/login/index.html
+    #   /var/www/viva/embed/index.html
+    #   /var/www/viva/assets/logo.svg
+    #   /var/www/viva/login/style.css
+    #   /var/www/viva/embed/style.css
+    location /static/ {
+        alias /var/www/viva/;
+        try_files $uri =404;
+        access_log off;
+        expires 1h;
+    }
+
+    location = /login {
+        # Importante: NO requiere auth_request
+        return 302 /static/login/index.html?rd=$request_uri;
+    }
+
+    location = /embed {
+        return 302 /static/embed/index.html?rd=/;
+    }
+
+    # -------------------------
+    # oauth2-proxy endpoints
+    # -------------------------
+    location /oauth2/ {
+        proxy_pass       http://127.0.0.1:4180;
+        proxy_set_header Host                    $host;
+        proxy_set_header X-Real-IP               $remote_addr;
+        proxy_set_header X-Scheme                $scheme;
+        proxy_set_header X-Auth-Request-Redirect $request_uri;
+    }
+
+    # nginx -> oauth2-proxy auth check
+    location = /oauth2/auth {
+        proxy_pass       http://127.0.0.1:4180/oauth2/auth;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Scheme          $scheme;
+        proxy_set_header Content-Length    "";
+        proxy_pass_request_body off;
+    }
+
+    # -------------------------
+    # App (Streamlit + API)
+    # -------------------------
+    # Permitir embed en ClickUp (si quieres iframe directo).
+    # OJO: browsers pueden bloquear cookies en iframes.
+    add_header Content-Security-Policy "frame-ancestors 'self' https://app.clickup.com https://*.clickup.com" always;
+
+    # Auth gate
+    location / {
+        auth_request /oauth2/auth;
+        error_page 401 = /static/login/index.html?rd=$request_uri;
+
+        # Propaga email desde oauth2-proxy hacia Streamlit/FastAPI
+        auth_request_set $user  $upstream_http_x_auth_request_user;
+        auth_request_set $email $upstream_http_x_auth_request_email;
+
+        proxy_set_header X-Forwarded-User  $user;
+        proxy_set_header X-Forwarded-Email $email;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Streamlit UI (ej: 8501)
+        proxy_pass http://127.0.0.1:8501;
+    }
+
+    # API (si la sirves por /api/ en el mismo dominio)
+    location /api/ {
+        auth_request /oauth2/auth;
+        error_page 401 = /static/login/index.html?rd=$request_uri;
+
+        auth_request_set $user  $upstream_http_x_auth_request_user;
+        auth_request_set $email $upstream_http_x_auth_request_email;
+
+        proxy_set_header X-Forwarded-User  $user;
+        proxy_set_header X-Forwarded-Email $email;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # FastAPI (ej: 8000)
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    # Logout helper
+    location = /logout {
+        return 302 /oauth2/sign_out;
+    }
+}

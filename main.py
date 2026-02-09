@@ -1,6 +1,8 @@
 import os
 import time
 import uuid
+import logging
+from logging.handlers import RotatingFileHandler
 import tempfile
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +20,33 @@ from chat_store import ChatStore
 from clickup_client import extract_list_id, get_tasks_from_list
 
 load_dotenv()
+
+# -----------------------
+# Logging
+# -----------------------
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE = os.getenv("LOG_FILE", "").strip()  # e.g. /var/log/viva_rag/api.log
+
+_root = logging.getLogger()
+_root.setLevel(LOG_LEVEL)
+
+if not _root.handlers:
+    _fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s")
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(_fmt)
+    _root.addHandler(_sh)
+
+if LOG_FILE:
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        _fh = RotatingFileHandler(LOG_FILE, maxBytes=5_000_000, backupCount=5)
+        _fh.setFormatter(_fmt)
+        _root.addHandler(_fh)
+    except Exception:
+        _root.exception("Failed to configure LOG_FILE handler")
+
+log = logging.getLogger("viva_rag.api")
+
 
 app = FastAPI(title="Viva RAG API", version="2.0.0")
 
@@ -120,6 +149,8 @@ class PurgeResponse(BaseModel):
 class ClickUpListSummaryRequest(BaseModel):
     tenant_id: str = DEFAULT_TENANT_ID
     list_id_or_url: str
+    include_closed: bool = True
+    max_pages: int = 2  # ClickUp pages (100 tasks per page). 2 pages ≈ 200 tasks
     model: Optional[str] = None
 
 class ClickUpListSummaryResponse(BaseModel):
@@ -324,121 +355,143 @@ def build_user_content(question: str, contexts: List[str]) -> str:
     )
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(
-    req: ChatRequest,
-    user_email: str = Depends(get_user_email),
-):
+def chat(req: ChatRequest, user_email: str = Depends(get_user_email)):
     question = (req.question or "").strip()
     if not question:
-        return {"answer": "Escribe una pregunta.", "sources": [], "num_contexts": 0, "model": validate_model(req.model)}
+        raise HTTPException(status_code=400, detail="question is required")
 
-    model = validate_model(req.model)
+    model = validate_model(req.model or LLM_DEFAULT_MODEL)
 
-    # Optional: keep vector DB clean
+    # Best-effort purge expired temporary points.
     try:
-        vector_store.purge_expired(tenant_id=req.tenant_id)
+        vector_store.purge_expired(tenant_id=req.tenant_id, scope=req.scope)
     except Exception:
-        pass
+        log.exception("purge_expired failed (non-blocking) tenant=%s scope=%s", req.tenant_id, req.scope)
 
-    query_vec = embed_texts([question])[0]
+    # --- RAG retrieval (fail-soft)
+    contexts: List[str] = []
+    sources: List[str] = []
 
-    found = vector_store.search(
-        query_vector=query_vec,
-        top_k=req.top_k,
-        tenant_id=req.tenant_id,
-        session_id=req.session_id,
-        scope=req.scope,
-    )
-
-    contexts = found.get("contexts", [])
-    sources = found.get("sources", [])
+    try:
+        query_vec = embed_texts([question])[0]
+        found = vector_store.search(
+            tenant_id=req.tenant_id,
+            scope=req.scope,
+            query_embedding=query_vec,
+            top_k=req.top_k,
+        )
+        contexts = found.get("contexts", []) or []
+        sources = found.get("sources", []) or []
+    except Exception as e:
+        # If Qdrant storage is corrupted or unavailable, don't break chat.
+        log.exception("vector search failed (continuing without RAG) tenant=%s scope=%s", req.tenant_id, req.scope)
+        contexts = []
+        sources = []
 
     user_content = build_user_content(question, contexts)
 
-    res = llm_client.chat.completions.create(
-        model=model,
-        temperature=0.2,
-        max_tokens=900,
-        messages=[
-            {"role": "system", "content": "Eres un asistente útil y preciso. Responde con base en los contextos."},
-            {"role": "user", "content": user_content},
-        ],
-    )
-    answer = (res.choices[0].message.content or "").strip()
-
-    # Persist chat if enabled
+    # --- LLM
     try:
-        chat_store.add_message(req.tenant_id, user_email, req.session_id, role="user", content=question, model=model, sources=[])
-        chat_store.add_message(req.tenant_id, user_email, req.session_id, role="assistant", content=answer, model=model, sources=sources)
-    except Exception:
-        pass
+        res = llm_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.2,
+        )
+        answer = (res.choices[0].message.content or "").strip()
+    except Exception as e:
+        log.exception("LLM call failed model=%s", model)
+        raise HTTPException(status_code=502, detail=f"LLM/OpenAI error: {str(e)}") from e
 
-    return {"answer": answer, "sources": sources, "num_contexts": len(contexts), "model": model}
+    # Persist conversation (best-effort)
+    try:
+        session_id = req.session_id or str(uuid.uuid4())
+        chat_store.add_message(req.tenant_id, user_email, session_id, role="user", content=question)
+        chat_store.add_message(req.tenant_id, user_email, session_id, role="assistant", content=answer)
+    except Exception:
+        log.exception("chat_store append failed (non-blocking)")
+
+    return ChatResponse(
+        answer=answer,
+        sources=sources,
+        num_contexts=len(contexts),
+        model=model,
+    )
 
 # -----------------------
 # ClickUp (beta)
 # -----------------------
 @app.post("/api/clickup/list_summary", response_model=ClickUpListSummaryResponse)
-def clickup_list_summary(
-    req: ClickUpListSummaryRequest,
-    user_email: str = Depends(get_user_email),
-):
-    if not CLICKUP_ENABLED:
-        raise HTTPException(status_code=400, detail="CLICKUP is not enabled on this backend.")
+def clickup_list_summary(req: ClickUpListSummaryRequest, user_email: str = Depends(get_user_email)) -> ClickUpListSummaryResponse:
+    if not CLICKUP_API_TOKEN:
+        raise HTTPException(status_code=400, detail="CLICKUP_API_TOKEN not configured")
+
     list_id = extract_list_id(req.list_id_or_url)
     if not list_id:
-        raise HTTPException(status_code=400, detail="Could not extract list_id. Provide a numeric list_id or a valid list URL.")
+        raise HTTPException(status_code=400, detail="Invalid ClickUp list URL/ID")
 
-    model = validate_model(req.model)
+    include_closed = bool(req.include_closed)
+    max_pages = max(1, min(int(req.max_pages or 1), 10))  # safety cap
 
-    data = get_tasks_from_list(api_token=CLICKUP_API_TOKEN, list_id=list_id, include_closed=True)
+    tasks: List[Dict[str, Any]] = []
+    try:
+        for page in range(max_pages):
+            data = get_tasks_from_list(
+                api_token=CLICKUP_API_TOKEN,
+                list_id=list_id,
+                include_closed=include_closed,
+                include_markdown_description=False,
+                page=page,
+            )
+            page_tasks = data.get("tasks", []) or []
+            tasks.extend(page_tasks)
+            # Stop early if we reached the end
+            if len(page_tasks) == 0:
+                break
+    except ClickUpAPIError as e:
+        log.exception("ClickUp API error list_id=%s", list_id)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as e:
+        log.exception("ClickUp fetch failed list_id=%s", list_id)
+        raise HTTPException(status_code=502, detail=f"ClickUp fetch failed: {str(e)}") from e
 
-    tasks = data.get("tasks", []) or []
-    stats: Dict[str, Any] = {
-        "total": len(tasks),
-        "by_status": {},
-        "by_priority": {},
-    }
+    sample = [
+        {
+            "name": t.get("name"),
+            "status": (t.get("status") or {}).get("status"),
+            "assignees": [a.get("email") for a in (t.get("assignees") or []) if isinstance(a, dict)],
+            "due_date": t.get("due_date"),
+            "url": t.get("url"),
+        }
+        for t in tasks[:120]
+    ]
 
-    for t in tasks:
-        status = ((t.get("status") or {}).get("status") if isinstance(t.get("status"), dict) else t.get("status")) or "unknown"
-        stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
+    prompt = f"""Eres un PM/operaciones interno de Viva Landscape & Design.
+Genera un resumen ejecutivo claro de una lista de ClickUp.
 
-        pr = t.get("priority")
-        pr_label = (pr.get("priority") if isinstance(pr, dict) else pr) or "none"
-        stats["by_priority"][pr_label] = stats["by_priority"].get(pr_label, 0) + 1
+- Resumen de alto nivel (3-6 bullets)
+- Riesgos / bloqueos (si detectas por status o vencidos)
+- Próximos pasos (3-6 bullets)
+- Si hay pocos datos, dilo y sugiere qué información falta.
 
-    # Build a concise prompt with only essential fields
-    sample = []
-    for t in tasks[:60]:
-        sample.append(
-            {
-                "name": t.get("name"),
-                "status": (t.get("status") or {}).get("status") if isinstance(t.get("status"), dict) else t.get("status"),
-                "due_date": t.get("due_date"),
-                "assignees": [a.get("username") for a in (t.get("assignees") or []) if isinstance(a, dict)],
-            }
+Datos (muestra):
+{sample}
+"""
+
+    model = validate_model(req.model or LLM_DEFAULT_MODEL)
+
+    try:
+        res = llm_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
         )
+        summary = (res.choices[0].message.content or "").strip()
+    except Exception as e:
+        log.exception("LLM call failed for ClickUp summary model=%s", model)
+        raise HTTPException(status_code=502, detail=f"LLM/OpenAI error: {str(e)}") from e
 
-    prompt = (
-        "Eres un asistente interno. Genera un resumen ejecutivo en español de la lista de tareas de ClickUp.\n"
-        "Incluye:\n"
-        "- Estado general (cuántas tareas y distribución por estado)\n"
-        "- Riesgos o alertas (si hay muchas overdue o sin due date, menciónalo)\n"
-        "- Próximos pasos sugeridos\n\n"
-        f"Estadísticas: {stats}\n\n"
-        f"Muestra (primeras tareas): {sample}\n"
-    )
+    return ClickUpListSummaryResponse(list_id=list_id, summary=summary, tasks_count=len(tasks))
 
-    res = llm_client.chat.completions.create(
-        model=model,
-        temperature=0.2,
-        max_tokens=700,
-        messages=[
-            {"role": "system", "content": "Eres un asistente de operaciones. Responde en español, con bullets claros."},
-            {"role": "user", "content": prompt},
-        ],
-    )
-    summary = (res.choices[0].message.content or "").strip()
-
-    return {"list_id": list_id, "stats": stats, "summary": summary, "model": model}
