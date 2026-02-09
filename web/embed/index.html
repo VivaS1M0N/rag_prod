@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Viva AI Assistant — ClickUp Embed</title>
+  <link rel="stylesheet" href="/static/embed/style.css"/>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="row">
+        <img src="/static/assets/logo.svg" alt="Viva AI" width="170" height="46" />
+      </div>
+      <h1>Viva AI Assistant</h1>
+      <p>Este es un acceso pensado para <b>ClickUp Embeds</b>. Algunos navegadores bloquean cookies en iframes; si ves problemas de sesión, abre el asistente en una pestaña nueva.</p>
+
+      <a id="openBtn" class="btn btn-primary" href="#" target="_blank" rel="noopener">
+        <span>Abrir asistente</span>
+      </a>
+
+      <a id="loginBtn" class="btn" href="#">
+        <span>Iniciar sesión</span>
+      </a>
+
+      <p class="small">Tip: si necesitas que funcione dentro del iframe, revisa SameSite=None en cookies de oauth2-proxy y la política <span class="code">frame-ancestors</span> en nginx.</p>
+    </div>
+  </div>
+
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const rd = params.get("rd") || "/";
+  document.getElementById("openBtn").setAttribute("href", rd);
+  document.getElementById("loginBtn").setAttribute("href", "/oauth2/start?rd=" + encodeURIComponent(rd));
+})();
+</script>
+</body>
+</html>
