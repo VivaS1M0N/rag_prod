@@ -18,33 +18,156 @@ st.set_page_config(page_title="Viva AI Assistant", page_icon="💬", layout="wid
 st.markdown(
     """
 <style>
-/* Softer background */
-div[data-testid="stAppViewContainer"]{
-  background: radial-gradient(1200px 600px at 10% 0%, rgba(255,255,255,0.06), rgba(0,0,0,0)) ,
-              radial-gradient(900px 500px at 90% 10%, rgba(255,0,90,0.08), rgba(0,0,0,0));
+/* -------------------------
+   Viva Brand Kit (UI)
+   ------------------------- */
+:root {
+  --viva-bg: #0b0e14;
+  --viva-bg-2: #121826;
+  --viva-surface: rgba(255, 255, 255, 0.06);
+  --viva-surface-2: rgba(255, 255, 255, 0.10);
+  --viva-border: rgba(255, 255, 255, 0.10);
+  --viva-text: rgba(255, 255, 255, 0.92);
+  --viva-muted: rgba(255, 255, 255, 0.66);
+  --viva-accent: #ff2d55;
+  --viva-accent-2: #6ee7ff;
+  --viva-radius: 18px;
+  --viva-radius-sm: 12px;
+  --viva-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
 }
 
-/* Make main content breathe and avoid overlap with fixed chat input */
-section.main > div.block-container { padding-bottom: 6.5rem; }
-
-/* Chat input pinned to bottom + fixed height (prevents growing upward) */
-div[data-testid="stChatInput"]{
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0.9rem;
-  z-index: 999;
-  padding: 0 1.2rem;
-}
-div[data-testid="stChatInput"] textarea{
-  min-height: 52px !important;
-  max-height: 52px !important;
-  overflow-y: auto !important;
+/* App background */
+div[data-testid="stAppViewContainer"] {
+  background: radial-gradient(900px 500px at 8% 10%, rgba(255, 45, 85, 0.18), transparent 55%),
+              radial-gradient(800px 520px at 85% 0%, rgba(110, 231, 255, 0.14), transparent 55%),
+              linear-gradient(180deg, var(--viva-bg) 0%, var(--viva-bg-2) 100%) !important;
+  color: var(--viva-text);
 }
 
-/* Round some containers */
-div[data-testid="stSidebar"]{ border-right: 1px solid rgba(255,255,255,0.08); }
-div[data-testid="stChatMessage"]{ border-radius: 18px; }
+/* Main block container spacing so the chat input never covers content */
+section.main > div.block-container {
+  padding-bottom: 9.5rem !important;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+  background: rgba(0, 0, 0, 0.22) !important;
+  border-right: 1px solid var(--viva-border);
+  backdrop-filter: blur(10px);
+}
+section[data-testid="stSidebar"] * {
+  color: var(--viva-text);
+}
+
+/* Generic cards */
+.viva-card {
+  background: var(--viva-surface);
+  border: 1px solid var(--viva-border);
+  border-radius: var(--viva-radius);
+  padding: 14px 14px;
+  box-shadow: var(--viva-shadow);
+}
+.viva-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--viva-border);
+  color: var(--viva-text);
+  font-size: 0.92rem;
+}
+.viva-muted {
+  color: var(--viva-muted);
+}
+
+/* Buttons - Streamlit */
+div[data-testid="stButton"] button {
+  border-radius: 999px !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  background: rgba(255,255,255,0.08) !important;
+  color: var(--viva-text) !important;
+  padding: 0.55rem 0.9rem !important;
+  transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
+}
+div[data-testid="stButton"] button:hover {
+  background: rgba(255,255,255,0.12) !important;
+  border-color: rgba(255,255,255,0.28) !important;
+}
+div[data-testid="stButton"] button:active {
+  transform: translateY(1px);
+}
+
+/* Link-buttons (HTML anchors) */
+a.viva-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.08);
+  color: var(--viva-text) !important;
+  padding: 0.55rem 0.9rem;
+  text-decoration: none !important;
+}
+a.viva-btn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.28);
+}
+a.viva-btn-primary {
+  background: linear-gradient(135deg, rgba(255,45,85,1) 0%, rgba(255,122,24,1) 100%);
+  border: none;
+}
+
+/* Tabs */
+button[data-baseweb="tab"] {
+  color: var(--viva-muted) !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+  color: var(--viva-text) !important;
+}
+
+/* Selectbox & inputs */
+div[data-baseweb="select"] > div {
+  border-radius: var(--viva-radius-sm) !important;
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+}
+input, textarea {
+  caret-color: var(--viva-accent);
+}
+
+/* Chat input: keep Streamlit layout, only style */
+div[data-testid="stChatInput"] {
+  border-top: 1px solid var(--viva-border);
+  background: rgba(11, 14, 20, 0.72);
+  backdrop-filter: blur(12px);
+}
+div[data-testid="stChatInput"] textarea {
+  border-radius: 18px !important;
+  min-height: 48px !important;
+  max-height: 180px !important; /* allows growth */
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: var(--viva-text) !important;
+}
+
+/* File uploader */
+div[data-testid="stFileUploaderDropzone"] {
+  border-radius: var(--viva-radius) !important;
+  border: 1px dashed rgba(255,255,255,0.20) !important;
+  background: rgba(255,255,255,0.04) !important;
+}
+
+/* Make default markdown links less "blue" */
+a {
+  color: var(--viva-accent-2) !important;
+}
+a:hover {
+  opacity: 0.9;
+}
 </style>
     """,
     unsafe_allow_html=True
@@ -191,15 +314,24 @@ with st.sidebar:
     st.markdown("## Viva AI")
     st.caption("Asistente interno con RAG (PDFs + conocimiento).")
 
-    st.markdown("### Usuario")
-    st.write(user_email)
-    st.write("🛡️ Admin" if is_admin else "👤 Usuario")
+        # Logout URL: if nginx has /logout mapped, use that; else oauth2-proxy sign_out
+    logout_url = "/logout"  # nginx should route /logout to /oauth2/sign_out
 
-    # Logout (requires Nginx route: /logout -> /oauth2/sign_out?rd=/)
-    base_url = get_public_base_url()
-    logout_url = (base_url + "/logout") if base_url else "/logout"
-    st.markdown(f'<a href="{logout_url}" target="_self" style="text-decoration:none;">🔒 Cerrar sesión</a>', unsafe_allow_html=True)
+    role_label = "🛡️ Admin" if is_admin_user else "👥 Equipo"
 
+    st.markdown(
+        f"""
+<div class="viva-card">
+  <div class="viva-muted" style="font-size:0.9rem; margin-bottom:10px;">Sesión</div>
+  <div class="viva-pill">👤 {user_email}</div>
+  <div style="height:10px;"></div>
+  <div class="viva-pill" style="opacity:0.9;">{role_label}</div>
+  <div style="height:12px;"></div>
+  <a class="viva-btn" href="{logout_url}" target="_self">🚪 Cerrar sesión</a>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     if is_embedded():
         st.info("Estás viendo el app embebido. Si algo no carga (login), abre en una pestaña nueva.")

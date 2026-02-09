@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+.venv/
+venv/
+
+# Secrets
+.env
+
+# Local data
+chat_store.db
+data/
+embed/
+qdrant_storage/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="60" viewBox="0 0 220 60" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="220" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF2D55"/>
+      <stop offset="1" stop-color="#FF7A18"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="220" height="60" rx="18" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)"/>
+  <circle cx="30" cy="30" r="14" fill="url(#g)"/>
+  <path d="M28 37c6 0 11-4 11-9s-5-9-11-9-11 4-11 9 5 9 11 9Z" fill="rgba(0,0,0,0.20)"/>
+  <text x="55" y="37" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="white" font-weight="700">Viva AI</text>
+</svg>
